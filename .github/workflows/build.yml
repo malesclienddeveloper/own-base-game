@@ -9,7 +9,7 @@ jobs:
         with:
           go-version: '1.22'
       - run: cd server && go mod tidy && go build ./... && go test ./...
-  godot:
+  godot-android:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,4 +17,13 @@ jobs:
         with:
           version: 4.3.0
           use-dotnet: false
-      - run: godot --headless --path client --export-release "Android" build/game.apk || true
+      - name: Generate debug keystore
+        run: keytool -genkeypair -v -keystore /tmp/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+      - name: Export APK
+        run: |
+          mkdir -p client/build
+          godot --headless --path client --export-release "Android" client/build/game.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: game-apk
+          path: client/build/game.apk
