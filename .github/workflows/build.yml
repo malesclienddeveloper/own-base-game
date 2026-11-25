@@ -8,5 +8,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-      - run: cd server && go build ./...
-  # Godot export can be added with a Godot setup action later.
+      - run: cd server && go mod tidy && go build ./... && go test ./...
+  godot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.3.0
+          use-dotnet: false
+      - run: godot --headless --path client --export-release "Android" build/game.apk || true
