@@ -1,2 +1,2 @@
-run = "cd server && go run ."
-entrypoint = "server/main.go"
+run = "cd server-node && npm install && npm start"
+entrypoint = "server-node/index.js"
