@@ -5,11 +5,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
-
-	"github.com/gorilla/websocket"
 )
-
-var upgrader = websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
 type PlayerState struct {
 	Resources int  `json:"resources"`
@@ -64,43 +60,72 @@ func (b *BaseState) Assign(pid string, ok bool) {
 	}
 }
 
-func (b *BaseState) UpgradeTH() {
+func (b *BaseState) UpgradeTH() bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.THLevel < 16 { // max placeholder
+	if b.THLevel < 16 {
 		b.THLevel++
+		return true
 	}
+	return false
 }
 
-func handleWS(rm *RoomManager) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			log.Println("upgrade:", err)
-			return
-		}
-		defer conn.Close()
-		for {
-			_, msg, err := conn.ReadMessage()
-			if err != nil {
-				return
-			}
-			var cmd map[string]any
-			if err := json.Unmarshal(msg, &cmd); err != nil {
-				conn.WriteMessage(websocket.TextMessage, []byte(`{"error":"bad json"}`))
-				continue
-			}
-			// Minimal command handling placeholder
-			resp, _ := json.Marshal(map[string]any{"received": cmd})
-			conn.WriteMessage(websocket.TextMessage, resp)
-		}
-	}
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
 }
 
 func main() {
 	rm := NewRoomManager()
-	_ = rm
-	http.HandleFunc("/ws", handleWS(rm))
+
+	http.HandleFunc("/api/room/create", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		owner := r.URL.Query().Get("owner")
+		if id == "" || owner == "" {
+			http.Error(w, "missing id/owner", 400)
+			return
+		}
+		base := rm.GetOrCreate(id, owner)
+		base.AddPlayer(owner)
+		base.Assign(owner, true)
+		writeJSON(w, base)
+	})
+
+	http.HandleFunc("/api/room/join", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		pid := r.URL.Query().Get("player")
+		base, ok := func() (*BaseState, bool) {
+			rm.mu.Lock()
+			defer rm.mu.Unlock()
+			b, ok := rm.rooms[id]
+			return b, ok
+		}()
+		if !ok {
+			http.Error(w, "room not found", 404)
+			return
+		}
+		if !base.AddPlayer(pid) {
+			http.Error(w, "room full (max 4)", 400)
+			return
+		}
+		writeJSON(w, base)
+	})
+
+	http.HandleFunc("/api/room/upgrade_th", func(w http.ResponseWriter, r *http.Request) {
+		id := r.URL.Query().Get("id")
+		rm.mu.Lock()
+		base, ok := rm.rooms[id]
+		rm.mu.Unlock()
+		if !ok {
+			http.Error(w, "room not found", 404)
+			return
+		}
+		base.UpgradeTH()
+		writeJSON(w, base)
+	})
+
+	http.Handle("/", http.FileServer(http.Dir("../web")))
+
 	log.Println("server listening on :8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
