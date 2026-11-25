@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: own-base-game-server
+    env: go
+    buildCommand: cd server && go build -o server .
+    startCommand: ./server/server
+    envVars:
+      - key: PORT
+        value: 10000
